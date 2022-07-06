@@ -33,3 +33,9 @@ source venv/bin/activate
 pip install -r requirements.txt
 python hellfire.py example/
 ```
+
+You can also install hellfire with:
+
+```
+pip install -e
+```
