@@ -1,2 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
 
-Hi my name is {{name}}!
+<head>
+    <title>Hades Blog</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content="" />
+</head>
+
+<body>
+    <h1>Hades</h1>
+    Hi, I am hades and I write here about random stuff.
+    (A <a href="https://github.com/flofriday/hellfire">hellfire</a> example blog)
+
+    <h2>Blog Posts</h2>
+    <ul>
+        {% for p in previews %}
+        <li>
+            <strong>
+                <a href="{{ p.url }}">{{p.title}}</a>
+            </strong>
+            <br>
+            {{p.date}}
+        </li>
+        {% endfor %}
+    </ul>
+</body>
+
+</html>

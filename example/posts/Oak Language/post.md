@@ -1,3 +1,8 @@
+---
+title: Not Oak
+date: 2022-07-06
+---
+
 # Oak 🌳
 
 [![Build Status](https://travis-ci.com/thesephist/oak.svg?branch=main)](https://app.travis-ci.com/thesephist/oak)
