@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 
-from jinja2 import Template
+from jinja2 import Template, select_autoescape
 
 
 def verify_setup(src: str, dst: str):
@@ -106,7 +106,13 @@ def compile_home(src: str, dst: str):
     previews.sort(key=lambda p: p.date)
 
     with open(template_path) as home:
-        template = Template(home.read())
+        template = Template(
+            home.read(),
+            autoescape=select_autoescape(
+                enabled_extensions=("html", "xml"),
+                default_for_string=True,
+            ),
+        )
 
     with open(index_path, "w") as index:
         index.write(template.render(previews=previews))
@@ -124,7 +130,13 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
 
     template_path = os.path.join(src, "post.template")
     with open(template_path) as home:
-        template = Template(home.read())
+        template = Template(
+            home.read(),
+            autoescape=select_autoescape(
+                enabled_extensions=("html", "xml"),
+                default_for_string=True,
+            ),
+        )
 
     posts = os.listdir(os.path.join(src, "posts"))
     posts = filter(lambda p: os.path.isdir(os.path.join(src, "posts", p)), posts)
@@ -170,8 +182,14 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
             continue
 
         # Write the complete document
+        meta = parse_frontmatter(post_path)
+        title = post
+        if "title" in meta:
+            title = meta["title"]
         with open(html_path, "w") as f:
-            f.write(template.render(content=pandoc.stdout))
+            f.write(
+                template.render(content=pandoc.stdout, title=title, date=meta["date"])
+            )
 
 
 def main():
@@ -191,7 +209,7 @@ def main():
     args = parser.parse_args()
 
     # Delete everything in a clean build
-    if args.clean:
+    if args.clean and os.path.exists(args.out):
         shutil.rmtree(args.out)
 
     # Setup and verify the conditions
