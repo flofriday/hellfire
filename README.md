@@ -11,8 +11,8 @@ or notes associated with it, I could simply drop them in there.
 
 ## Status
 
-I am not currently using this software at the moment. However, it is already
-useable (even though it is very rough around the edges).
+I am using already using this generator to build my personal website
+[flofriday.dev](https://flofriday.dev). However, it is very rough to use.
 
 Here are some features I want to implement in the future:
 
@@ -22,6 +22,7 @@ Here are some features I want to implement in the future:
 - [ ] Propper frontmatter parsing
 - [ ] Semantic error handling
       (if the markdown points to an image that doesn't exist it should display a warning)
+- [ ] RSS feed (automatically generated)
 
 ## Usage
 

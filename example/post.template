@@ -17,6 +17,7 @@ In this template you can use the following variables, with the Jinja2 sytax:
 
 <body>
     <h1>{{title}}</h1>
+    <h3>{{date}}</h3>
 
     {{content|safe}}
 </body>

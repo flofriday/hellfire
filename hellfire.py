@@ -1,10 +1,14 @@
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 import os
 import shutil
 import subprocess
+import time
 
 from jinja2 import Template, select_autoescape
+
+DATE_FORMAT = "%d %b, %Y"
 
 
 def verify_setup(src: str, dst: str):
@@ -18,14 +22,17 @@ def verify_setup(src: str, dst: str):
 
 
 # This functions checks if a file already exists and is up to date.
-def is_done(src: str, dst: str):
+def is_done(dst: str, *args: list[str]):
     if not os.path.exists(dst):
         return False
 
-    src_mtime = os.path.getmtime(src)
     dst_mtime = os.path.getmtime(dst)
+    for src in args:
+        src_mtime = os.path.getmtime(src)
+        if dst_mtime < src_mtime:
+            return False
 
-    return dst_mtime > src_mtime
+    return True
 
 
 # Copies all files (shallow copy) from the src to the dst, excluding the
@@ -46,21 +53,30 @@ def copy_files(src: str, dst: str, exceptions: list[str] = None):
         src_path = os.path.join(src, file)
         dst_path = os.path.join(dst, file)
 
-        if is_done(src_path, dst_path):
+        if is_done(dst_path, src_path):
             continue
 
         shutil.copyfile(src_path, dst_path)
 
 
+@dataclass
+class PostMetadata:
+    title: str = None
+    date: datetime = None
+    other: dict[str, str] = field(default_factory=dict)
+
+
 # This is a very simple frontmatter parser, it only supports simple yaml key
 # value attributes.
-def parse_frontmatter(src: str) -> dict[str, str]:
-    with open(src) as md:
+def load_post_metadata(post_path: str) -> PostMetadata:
+    with open(post_path) as md:
         lines = map(lambda l: l.strip(), md.readlines())
 
-    frontmatter = {}
+    meta = PostMetadata()
+    other = {}
     in_frontmatter = False
     for line in lines:
+        # Parse the data
         if line == "---":
             if in_frontmatter:
                 break
@@ -71,9 +87,28 @@ def parse_frontmatter(src: str) -> dict[str, str]:
             break
 
         key, value = line.split(":")
-        frontmatter[key] = value
+        key = key.strip()
+        value = value.strip()
 
-    return frontmatter
+        # Store the data
+        if key == "date":
+            meta.date = datetime.strptime(value, "%Y-%m-%d")
+        elif key == "title":
+            meta.title = value
+        else:
+            other[key] = value
+
+    # Fill in the blanks with warnings
+    if meta.title is None:
+        # TODO: take the filename
+        meta.title = "No title available"
+        print(f"⚠️ Post '{post_path}' doesn't have a title in the metadata.")
+
+    if meta.date is None:
+        meta.date = datetime.fromtimestamp(os.path.getmtime(post_path))
+        print(f"⚠️ Post '{post_path}' doesn't have a date in the metadata.")
+
+    return meta
 
 
 def compile_home(src: str, dst: str):
@@ -93,14 +128,11 @@ def compile_home(src: str, dst: str):
     previews = []
     for post in posts:
         post_path = os.path.join(src, "posts", post, "post.md")
-        date = os.path.getctime(post_path)
-        meta = parse_frontmatter(post_path)
-        if "date" not in meta:
-            print(f"⚠️ File {post_path} doesn't have a date frontmatter attribue")
-        else:
-            date = meta["date"]
+        meta = load_post_metadata(post_path)
 
-        preview = PostPreview(post, date, "posts/" + post + "/")
+        preview = PostPreview(
+            meta.title, datetime.strftime(meta.date, DATE_FORMAT), "posts/" + post + "/"
+        )
         previews.append(preview)
 
     previews.sort(key=lambda p: p.date)
@@ -153,7 +185,7 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
 
         # Skip if is already newest
         # TODO: we should also include the template timestamp
-        if is_done(post_path, html_path) and not force_build:
+        if is_done(html_path, post_path, template_path) and not force_build:
             continue
 
         # Compile the markdown to html
@@ -182,13 +214,14 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
             continue
 
         # Write the complete document
-        meta = parse_frontmatter(post_path)
-        title = post
-        if "title" in meta:
-            title = meta["title"]
+        meta = load_post_metadata(post_path)
         with open(html_path, "w") as f:
             f.write(
-                template.render(content=pandoc.stdout, title=title, date=meta["date"])
+                template.render(
+                    content=pandoc.stdout,
+                    title=meta.title,
+                    date=datetime.strftime(meta.date, DATE_FORMAT),
+                )
             )
 
 
