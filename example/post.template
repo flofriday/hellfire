@@ -3,9 +3,11 @@
 
 <!--
 In this template you can use the following variables, with the Jinja2 sytax: 
-    title:      A string containing the title of the blog post.
-    date:       A string containing the publish date.
-    content:    A string containing the html of the actual blog post.
+    title:          A string containing the title of the blog post.
+    date:           A string containing the publish date.
+    description:    A string containing a short description of the post.
+    image:          A string of a URL to an image, for social previews.
+    content:        A string containing the html of the actual blog post.
 -->
 
 <head>

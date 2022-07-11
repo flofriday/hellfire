@@ -4,9 +4,10 @@ from datetime import datetime
 import os
 import shutil
 import subprocess
-import time
+from functools import lru_cache
 
 from jinja2 import Template, select_autoescape
+import toml
 
 DATE_FORMAT = "%d %b, %Y"
 
@@ -19,6 +20,21 @@ def verify_setup(src: str, dst: str):
 
     if not os.path.isdir(dst):
         os.mkdir(dst)
+
+
+def load_config(src: str) -> dict:
+
+    config_path = os.path.join(src, "config.toml")
+    if not os.path.isfile(config_path):
+        print(f"🔥 Config '{config_path}' doesn't exist.")
+        exit(1)
+
+    config = toml.load(config_path)
+    if "url" not in config:
+        print(f"🔥 'url' key not found in '{config_path}'")
+        exit(1)
+
+    return config
 
 
 # This functions checks if a file already exists and is up to date.
@@ -63,13 +79,18 @@ def copy_files(src: str, dst: str, exceptions: list[str] = None):
 class PostMetadata:
     title: str = None
     date: datetime = None
+    description: str = None
+    image: str = None
     other: dict[str, str] = field(default_factory=dict)
 
 
 # This is a very simple frontmatter parser, it only supports simple yaml key
 # value attributes.
-def load_post_metadata(post_path: str) -> PostMetadata:
+@lru_cache(maxsize=512)
+def load_post_metadata(src: str, post: str, base_url) -> PostMetadata:
+    post_path = os.path.join(src, "posts", post, "post.md")
     with open(post_path) as md:
+        # TODO: read the lines lazy
         lines = map(lambda l: l.strip(), md.readlines())
 
     meta = PostMetadata()
@@ -95,6 +116,12 @@ def load_post_metadata(post_path: str) -> PostMetadata:
             meta.date = datetime.strptime(value, "%Y-%m-%d")
         elif key == "title":
             meta.title = value
+        elif key == "description":
+            meta.description = value
+        elif key == "image":
+            if not value.startswith("https://"):
+                value = base_url + f"/posts/{post}/{value}"
+            meta.image = value
         else:
             other[key] = value
 
@@ -108,10 +135,20 @@ def load_post_metadata(post_path: str) -> PostMetadata:
         meta.date = datetime.fromtimestamp(os.path.getmtime(post_path))
         print(f"⚠️ Post '{post_path}' doesn't have a date in the metadata.")
 
+    if meta.description is None:
+        # TODO: We could parse the text and add the start of the post by default
+        meta.description = ""
+        print(f"⚠️ Post '{post_path}' doesn't have a description in the metadata.")
+
+    if meta.image is None:
+        # We should by default link to the profile picture or something
+        meta.image = ""
+        print(f"⚠️ Post '{post_path}' doesn't have a image in the metadata.")
+
     return meta
 
 
-def compile_home(src: str, dst: str):
+def compile_home(src: str, dst: str, config: dict):
     @dataclass
     class PostPreview:
         title: str
@@ -127,8 +164,7 @@ def compile_home(src: str, dst: str):
 
     previews = []
     for post in posts:
-        post_path = os.path.join(src, "posts", post, "post.md")
-        meta = load_post_metadata(post_path)
+        meta = load_post_metadata(src, post, config["url"])
 
         preview = PostPreview(
             meta.title, datetime.strftime(meta.date, DATE_FORMAT), "posts/" + post + "/"
@@ -152,10 +188,10 @@ def compile_home(src: str, dst: str):
     # Also copy all files that are not templates into the root of the dst
     # directory so that static images will be served and can be used in the
     # templates
-    copy_files(src, dst, exceptions=["home.template", "post.template"])
+    copy_files(src, dst, exceptions=["home.template", "post.template", "config.toml"])
 
 
-def compile_posts(src: str, dst: str, force_build: bool = False):
+def compile_posts(src: str, dst: str, config: dict):
     dst_path = os.path.join(dst, "posts")
     if not os.path.isdir(dst_path):
         os.mkdir(dst_path)
@@ -184,8 +220,7 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
         copy_files(post_dir, html_dir, exceptions=["post.md"])
 
         # Skip if is already newest
-        # TODO: we should also include the template timestamp
-        if is_done(html_path, post_path, template_path) and not force_build:
+        if is_done(html_path, post_path, template_path):
             continue
 
         # Compile the markdown to html
@@ -202,7 +237,6 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
             capture_output=True,
             text=True,
         )
-        # print(" ".join(pandoc.args))
 
         if pandoc.returncode != 0:
             print(
@@ -214,12 +248,14 @@ def compile_posts(src: str, dst: str, force_build: bool = False):
             continue
 
         # Write the complete document
-        meta = load_post_metadata(post_path)
+        meta = load_post_metadata(src, post, config["url"])
         with open(html_path, "w") as f:
             f.write(
                 template.render(
                     content=pandoc.stdout,
                     title=meta.title,
+                    description=meta.description,
+                    image=meta.image,
                     date=datetime.strftime(meta.date, DATE_FORMAT),
                 )
             )
@@ -248,11 +284,14 @@ def main():
     # Setup and verify the conditions
     verify_setup(args.source, args.out)
 
+    # Load the config.toml file
+    config = load_config(args.source)
+
     # Compile the homepage
-    compile_home(args.source, args.out)
+    compile_home(args.source, args.out, config)
 
     # Compile all posts
-    compile_posts(args.source, args.out)
+    compile_posts(args.source, args.out, config)
 
 
 if __name__ == "__main__":

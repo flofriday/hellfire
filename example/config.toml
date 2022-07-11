@@ -1,0 +1,4 @@
+# Here you can select the domain on which the blog will run.
+# Most of hellfire aims to generate relative URLs so that it still works with 
+# a local dev environment. However opengraph metadata only accepts absolut urls.
+url = "https://flofriday.dev"
