@@ -18,7 +18,6 @@ Here are some features I want to implement in the future:
 
 - [ ] Build in server for development with auto reloading
       (if a file updates, a rebuild should be triggered, and reload the browser)
-- [ ] Improved CLI UX
 - [ ] Propper frontmatter parsing
 - [ ] Semantic error handling
       (if the markdown points to an image that doesn't exist it should display a warning)
@@ -32,7 +31,7 @@ You need a local installation of Python 3.10 and pip.
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python hellfire.py example/
+python hellfire.py build example/
 ```
 
 You can also install hellfire with:

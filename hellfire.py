@@ -2,6 +2,7 @@ import argparse
 from dataclasses import dataclass, field
 from datetime import datetime
 import os
+import re
 import shutil
 import subprocess
 from functools import lru_cache
@@ -13,17 +14,37 @@ DATE_FORMAT = "%d %b, %Y"
 
 
 def verify_setup(src: str, dst: str):
+    # Check that pandoc is installed
+    if not shutil.which("pandoc"):
+        print(
+            "🔥 Pandoc is not installed (or maybe just not in the path)\n"
+            "hellfire requires pandoc, which can be installed from:\n"
+            "https://pandoc.org/installing.html"
+        )
+        exit(1)
+
+    # Verify the source directory is in good health
     if not os.path.isdir(src):
         raise Exception(f"The source directory `{src}` doesn't exist")
 
-    # TODO: more tests that the templates and posts exist
+    required_files = map(
+        lambda f: os.path.join(src, f),
+        ["config.toml", "home.template", "post.template"],
+    )
+    had_error = False
+    for file in required_files:
+        if not os.path.exists(file):
+            print(f"🔥 Required file '{file}' does not exist.")
 
+    if had_error:
+        exit(1)
+
+    # Verify the output directory
     if not os.path.isdir(dst):
         os.mkdir(dst)
 
 
 def load_config(src: str) -> dict:
-
     config_path = os.path.join(src, "config.toml")
     if not os.path.isfile(config_path):
         print(f"🔥 Config '{config_path}' doesn't exist.")
@@ -191,6 +212,60 @@ def compile_home(src: str, dst: str, config: dict):
     copy_files(src, dst, exceptions=["home.template", "post.template", "config.toml"])
 
 
+def compile_post(post: str, template: Template, src: str, dst: str, config: dict):
+    # Also copy all files from the dir to dst
+    post_dir = os.path.join(src, "posts", post)
+    html_dir = os.path.join(dst, "posts", post)
+    post_path = os.path.join(post_dir, "post.md")
+    html_path = os.path.join(html_dir, "index.html")
+    template_path = os.path.join(src, "post.template")
+
+    if not os.path.isdir(html_dir):
+        os.mkdir(html_dir)
+    copy_files(post_dir, html_dir, exceptions=["post.md"])
+
+    # Skip html if already up to date (this is expensive)
+    if is_done(html_path, post_path, template_path):
+        return
+
+    # Compile the markdown to html
+    pandoc = subprocess.run(
+        [
+            "pandoc",
+            "--from",
+            "gfm",
+            "--to",
+            "html",
+            post_path,
+        ],
+        # shell=True,
+        capture_output=True,
+        text=True,
+    )
+
+    if pandoc.returncode != 0:
+        print(
+            f"🔥 '{' '.join(pandoc.args)}' failed with error code {pandoc.returncode}\n"
+            "Visit this for more information: https://pandoc.org/MANUAL.html#exit-codes\n"
+            "Pandocs error: ",
+            pandoc.stderr,
+        )
+        return
+
+    # Write the complete document
+    meta = load_post_metadata(src, post, config["url"])
+    with open(html_path, "w") as f:
+        f.write(
+            template.render(
+                content=pandoc.stdout,
+                title=meta.title,
+                description=meta.description,
+                image=meta.image,
+                date=datetime.strftime(meta.date, DATE_FORMAT),
+            )
+        )
+
+
 def compile_posts(src: str, dst: str, config: dict):
     dst_path = os.path.join(dst, "posts")
     if not os.path.isdir(dst_path):
@@ -209,74 +284,10 @@ def compile_posts(src: str, dst: str, config: dict):
     posts = os.listdir(os.path.join(src, "posts"))
     posts = filter(lambda p: os.path.isdir(os.path.join(src, "posts", p)), posts)
     for post in posts:
-        # Also copy all files from the dir to dst
-        post_dir = os.path.join(src, "posts", post)
-        html_dir = os.path.join(dst, "posts", post)
-        post_path = os.path.join(post_dir, "post.md")
-        html_path = os.path.join(html_dir, "index.html")
-
-        if not os.path.isdir(html_dir):
-            os.mkdir(html_dir)
-        copy_files(post_dir, html_dir, exceptions=["post.md"])
-
-        # Skip if is already newest
-        if is_done(html_path, post_path, template_path):
-            continue
-
-        # Compile the markdown to html
-        pandoc = subprocess.run(
-            [
-                "pandoc",
-                "--from",
-                "gfm",
-                "--to",
-                "html",
-                post_path,
-            ],
-            # shell=True,
-            capture_output=True,
-            text=True,
-        )
-
-        if pandoc.returncode != 0:
-            print(
-                f"🔥 '{' '.join(pandoc.args)}' failed with error code {pandoc.returncode}\n"
-                "Visit this for more information: https://pandoc.org/MANUAL.html#exit-codes\n"
-                "Pandocs error: ",
-                pandoc.stderr,
-            )
-            continue
-
-        # Write the complete document
-        meta = load_post_metadata(src, post, config["url"])
-        with open(html_path, "w") as f:
-            f.write(
-                template.render(
-                    content=pandoc.stdout,
-                    title=meta.title,
-                    description=meta.description,
-                    image=meta.image,
-                    date=datetime.strftime(meta.date, DATE_FORMAT),
-                )
-            )
+        compile_post(post, template, src, dst, config)
 
 
-def main():
-    # Parse the arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "source", default=".", nargs="?", help="The source directory of the blog."
-    )
-    parser.add_argument(
-        "--out", default="./dist", help="The directory to store the generated pages in."
-    )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="Make a clean build (slow), however it will ensure that no old artifacts will leak.",
-    )
-    args = parser.parse_args()
-
+def build(args):
     # Delete everything in a clean build
     if args.clean and os.path.exists(args.out):
         shutil.rmtree(args.out)
@@ -292,6 +303,68 @@ def main():
 
     # Compile all posts
     compile_posts(args.source, args.out, config)
+
+
+def new_post(args):
+    # Create all used variables
+    title = args.title
+    date = datetime.now().strftime("%Y-%m-%d")
+    whitespace_pattern = re.compile("(\s|-)+")
+    path_pattern = re.compile("[^a-zA-Z0-9\-]+")
+    title_path = whitespace_pattern.sub("-", title)
+    title_path = path_pattern.sub("", title_path)
+    title_path = title_path.lower()
+    print(f"'{title_path}'")
+
+    # Create the directory
+    dir_path = os.path.join(args.source, "posts", title_path)
+    os.mkdir(dir_path)
+
+    with open(os.path.join(dir_path, "post.md"), "w") as f:
+        f.write(
+            f"""
+---
+title: {title}
+date: {date}
+image: some_image_for_social_preview.png
+description: This is just a new post.
+---
+
+<!-- Start writing your markdown here ;) -->
+""".strip()
+        )
+
+
+def main():
+    # Parse the arguments
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    build_parser = subparsers.add_parser("build", help="Build the website.")
+    build_parser.add_argument(
+        "source", default=".", nargs="?", help="The source directory of the blog."
+    )
+    build_parser.add_argument(
+        "--out", default="./dist", help="The directory to store the generated pages in."
+    )
+    build_parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Make a clean build (slow), however it will ensure that no old artifacts will leak.",
+    )
+
+    new_parser = subparsers.add_parser("new", help="Create a new post.")
+    new_parser.add_argument("title", help="The title of the new post.")
+    new_parser.add_argument(
+        "source", default=".", nargs="?", help="The source directory of the blog."
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "build":
+        build(args)
+    elif args.command == "new":
+        new_post(args)
 
 
 if __name__ == "__main__":
