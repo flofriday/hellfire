@@ -1,8 +1,16 @@
--e git+https://github.com/flofriday/hellfire.git@4608f19cfeb533c14aba5e84138127ed14034116#egg=hellfire
+black==22.6.0
+flake8==4.0.1
+-e git+https://github.com/flofriday/hellfire.git@2d8cb9157c811bdc60d3e6f64cbca7b749c92287#egg=hellfire
 Jinja2==3.1.2
 MarkupSafe==2.1.1
+mccabe==0.6.1
 mypy==0.961
 mypy-extensions==0.4.3
+pathspec==0.9.0
+platformdirs==2.5.2
+pycodestyle==2.8.0
+pyflakes==2.4.0
 toml==0.10.2
 tomli==2.0.1
 typing_extensions==4.3.0
+watchdog==2.1.9
