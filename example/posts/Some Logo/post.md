@@ -1,4 +1,6 @@
 ---
+title: Image test page.
+draft: false
 date: 2022-07-04
 ---
 

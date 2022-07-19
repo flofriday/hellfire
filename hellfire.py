@@ -1,14 +1,16 @@
 import argparse
 from dataclasses import dataclass, field
 from datetime import datetime
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
 import re
 import shutil
 import subprocess
-from functools import lru_cache
 
 from jinja2 import Template, select_autoescape
 import toml
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 DATE_FORMAT = "%d %b, %Y"
 
@@ -100,6 +102,7 @@ def copy_files(src: str, dst: str, exceptions: list[str] = None):
 class PostMetadata:
     title: str = None
     date: datetime = None
+    is_draft: bool = False
     description: str = None
     image: str = None
     other: dict[str, str] = field(default_factory=dict)
@@ -107,7 +110,10 @@ class PostMetadata:
 
 # This is a very simple frontmatter parser, it only supports simple yaml key
 # value attributes.
-@lru_cache(maxsize=512)
+# TODO: We can no longer cache this because it might change when we run the
+# serve command. But now it will run twice during a build and also show the
+# errors twice, which should be fixed in the future.
+# @lru_cache(maxsize=512)
 def load_post_metadata(src: str, post: str, base_url) -> PostMetadata:
     post_path = os.path.join(src, "posts", post, "post.md")
     with open(post_path) as md:
@@ -139,6 +145,8 @@ def load_post_metadata(src: str, post: str, base_url) -> PostMetadata:
             meta.title = value
         elif key == "description":
             meta.description = value
+        elif key == "draft" and value.lower() == "true":
+            meta.is_draft = True
         elif key == "image":
             if not value.startswith("https://"):
                 value = base_url + f"/posts/{post}/{value}"
@@ -185,8 +193,12 @@ def compile_home(src: str, dst: str, config: dict):
 
     previews = []
     for post in posts:
+        # Load the metadata and don't show drafts at the homepage.
         meta = load_post_metadata(src, post, config["url"])
+        if meta.is_draft:
+            continue
 
+        # Map metadata to a post preview
         preview = PostPreview(
             meta.title, datetime.strftime(meta.date, DATE_FORMAT), "posts/" + post + "/"
         )
@@ -305,6 +317,49 @@ def build(args):
     compile_posts(args.source, args.out, config)
 
 
+def serve(args):
+    print("Building the webpage...\n")
+    build(args)
+    print(
+        "\n"
+        "🚀 Development server started on http://localhost:8000\n"
+        "️WARNING: Do not use this in production!\n"
+    )
+
+    # Start the File Watcher
+    class BuildHandler(FileSystemEventHandler):
+        @staticmethod
+        def on_any_event(event):
+            print("Building the webpage...")
+            build(args)
+            print("Completed build")
+
+    observer = Observer()
+    observer.schedule(BuildHandler(), path=args.source, recursive=True)
+    observer.start()
+
+    # Start the webserver
+    serve_folder = args.out
+
+    class RequestHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs, directory=serve_folder)
+
+        def end_headers(self) -> None:
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            return super().end_headers()
+
+    server_address = ("localhost", 8000)
+    httpd = HTTPServer(server_address, RequestHandler)
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
 def new_post(args):
     # Create all used variables
     title = args.title
@@ -353,6 +408,22 @@ def main():
         help="Make a clean build (slow), however it will ensure that no old artifacts will leak.",
     )
 
+    server_parser = subparsers.add_parser(
+        "serve",
+        help="A development server that, watches the input folder, rebuilds it and serves it on localhost:8000",
+    )
+    server_parser.add_argument(
+        "source", default=".", nargs="?", help="The source directory of the blog."
+    )
+    server_parser.add_argument(
+        "--out", default="./dist", help="The directory to store the generated pages in."
+    )
+    server_parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Make a clean build (slow), however it will ensure that no old artifacts will leak.",
+    )
+
     new_parser = subparsers.add_parser("new", help="Create a new post.")
     new_parser.add_argument("title", help="The title of the new post.")
     new_parser.add_argument(
@@ -363,6 +434,8 @@ def main():
 
     if args.command == "build":
         build(args)
+    elif args.command == "serve":
+        serve(args)
     elif args.command == "new":
         new_post(args)
 
