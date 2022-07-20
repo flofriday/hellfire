@@ -204,7 +204,7 @@ def compile_home(src: str, dst: str, config: dict):
         )
         previews.append(preview)
 
-    previews.sort(key=lambda p: p.date)
+    previews.sort(key=lambda p: p.date, reverse=True)
 
     with open(template_path) as home:
         template = Template(
@@ -334,7 +334,6 @@ def serve(args):
             # Skip changes in output directory
             if os.path.abspath(event.src_path).startswith(os.path.abspath(args.out)):
                 return
-            print(event)
 
             print("Building the webpage...")
             build(args)
@@ -375,7 +374,6 @@ def new_post(args):
     title_path = whitespace_pattern.sub("-", title)
     title_path = path_pattern.sub("", title_path)
     title_path = title_path.lower()
-    print(f"'{title_path}'")
 
     # Create the directory
     dir_path = os.path.join(args.source, "posts", title_path)
