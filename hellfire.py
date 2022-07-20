@@ -327,12 +327,18 @@ def serve(args):
     )
 
     # Start the File Watcher
+
     class BuildHandler(FileSystemEventHandler):
         @staticmethod
         def on_any_event(event):
+            # Skip changes in output directory
+            if os.path.abspath(event.src_path).startswith(os.path.abspath(args.out)):
+                return
+            print(event)
+
             print("Building the webpage...")
             build(args)
-            print("Completed build")
+            print("Completed build\n")
 
     observer = Observer()
     observer.schedule(BuildHandler(), path=args.source, recursive=True)
