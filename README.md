@@ -38,5 +38,5 @@ python hellfire.py build example/
 You can also install hellfire with:
 
 ```bash
-pip install -e
+pip install -e .
 ```
